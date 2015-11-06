@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.hadachi.myapplication" >
+    <!--Wi-Fiによる通信を許可する-->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"></uses-permission>
+    <!--Bluetoothによる通信を許可する-->
+    <uses-permission android:name="android.permission.BLUETOOTH"></uses-permission>
 
     <application
         android:allowBackup="true"
