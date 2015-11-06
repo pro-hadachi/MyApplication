@@ -1,6 +1,9 @@
 package com.example.hadachi.myapplication;
 
 import android.bluetooth.BluetoothAdapter;
+import android.content.Context;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.support.v7.app.ActionBarActivity;
 import android.util.Log;
@@ -19,6 +22,13 @@ public class MainActivity extends ActionBarActivity {
         btAddress = btAdapter.getAddress();
 
         Log.d("VMApp", "Bluetoothアドレス = " + btAddress);
+
+        WifiManager wifiManager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+        String macAddress = null;
+        macAddress = wifiInfo.getMacAddress();
+
+        Log.d("VMApp", "Wi-FiMACアドレス = " + macAddress);
     }
 
     @Override
