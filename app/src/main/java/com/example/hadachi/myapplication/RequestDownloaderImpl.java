@@ -1,23 +1,7 @@
 package com.example.hadachi.myapplication;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.Reader;
-import java.io.UnsupportedEncodingException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.net.SocketTimeoutException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.zip.GZIPInputStream;
+import android.content.Context;
+import android.util.Base64;
 
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
@@ -36,15 +20,24 @@ import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.apache.http.conn.ssl.X509HostnameVerifier;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.conn.SingleClientConnManager;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.HttpConnectionParams;
 import org.apache.http.params.HttpParams;
 import org.apache.http.protocol.HTTP;
-import org.json.JSONObject;
 
-import android.content.Context;
-import android.util.Base64;
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.io.UnsupportedEncodingException;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.zip.GZIPInputStream;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -61,27 +54,8 @@ public class RequestDownloaderImpl implements Runnable {
     ///BASIC認証ユーザーパスワード
     public String basicAuthPasswd;
 
-    ///コールバッククラス
-    public Object callbackTarget;
-
-    ///コールバックターゲット
-    public Method callbackAction;
-
-    ///エラーコールバックターゲット
-    public Method callbackErrorAction;
-
-    ///コールバックリスナー
-    public onRequestResultListener<Boolean> callbackListenerBoolean;
-    ///コールバックリスナー
-    public onRequestResultListener<HashMap<String,String>> callbackListenerItem;
-    ///コールバックリスナー
-    public onRequestResultListener<responseListObject> callbackListenerList;
-    ///コールバックリスナー
-    public onRequestResultListener<String> callbackListenerFile;
-    ///コールバックリスナー
-    public onRequestResultListener<JSONObject> callbackListenerJson;
-    ///コールバックリスナー
-    public onRequestResultListener<responseMapAndEntrylistObject> callbackListenerMapAndEntrylist;
+    /** コールバックリスナー */
+    private OnRequestResultListener<String, String> callbackListener;
 
     ///レスポンスのキー（テーブル名）
     public String responsekey;
@@ -155,9 +129,9 @@ public class RequestDownloaderImpl implements Runnable {
      * @param isPost リクエストの種別
      * @return 正しくネットワークに接続出来ていなかったらfalse
      */
-    public boolean downloadWithUrl(String url, HashMap<String,String> params, OnRequestResultListener<String> listener, Context context, boolean isPost) {
+    public boolean downloadWithUrl(String url, HashMap<String,String> params, OnRequestResultListener<String, String> listener, Context context, boolean isPost) {
 
-        if(!Utils.isConnectNetwork()){
+        if(!Helper.isConnectNetwork()){
             return false;
         }
 
@@ -167,7 +141,7 @@ public class RequestDownloaderImpl implements Runnable {
             for(Map.Entry<String, String> entry: params.entrySet()){
                 String key = entry.getKey();
                 String value = entry.getValue();
-                Utils.tauLog("RequestDownloaderImpl.downloadWithUrl", "API param " + key + " = " + value);
+                Helper.vmappLog("RequestDownloaderImpl.downloadWithUrl", "API param " + key + " = " + value);
 
                 mPostParams.add(new BasicNameValuePair(key,value));
             }
@@ -184,17 +158,6 @@ public class RequestDownloaderImpl implements Runnable {
         return true;
     }
 
-//		synchronized(this){
-        {
-            mUrl=sUrl;
-            mContents=aContents;
-            cancel=false;
-            //スレッド開始
-            Thread t = new Thread(this);
-            t.start();
-        }
-    }
-
     /**
      * スレッド実行
      */
@@ -206,8 +169,9 @@ public class RequestDownloaderImpl implements Runnable {
         try{
             //リクエストとダウンロード
             requestAndDownload(null);
-        }
-        finally{
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally{
             countDownloading--;
             inThread=false;
         }
@@ -220,7 +184,7 @@ public class RequestDownloaderImpl implements Runnable {
         HttpUriRequest method=null;
         try{
 
-            BsmoLogUtil.d(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG, String.format("download thread start %s -> %s,%s",mUrl,saveFile,basicAuthUser));
+//            Helper.vmappLog(InternalConstant.BUSHIMO_SDK_DEBUG_TAG, String.format("download thread start %s -> %s,%s", mUrl, saveFile, basicAuthUser));
 
             int connection_Timeout = CONNECTION_TIMEOUT_LONG; // = 10 sec
 
@@ -239,7 +203,6 @@ public class RequestDownloaderImpl implements Runnable {
             HttpConnectionParams.setConnectionTimeout(my_httpParams, connection_Timeout);
             HttpConnectionParams.setSoTimeout(my_httpParams, connection_Timeout);
 
-            DefaultHttpClient client = new DefaultHttpClient(my_httpParams);
             if (!post){
                 HttpGet get = new HttpGet( mUrl );
                 method = get;
@@ -257,11 +220,13 @@ public class RequestDownloaderImpl implements Runnable {
             }
 
             // 必要ならBasic認証を持たせる
-            String basicAuth = EnvUtils.createBasicAuthString(mUrl);
-            Utils.tauLog("RequestDownloder", "murl = " + mUrl);
-            if(basicAuth != null){
-                method.setHeader("Authorization", basicAuth);
+            Helper.vmappLog("RequestDownloder", "murl = " + mUrl);
+            if(basicAuthUser != null){
+                method.setHeader("Authorization", getBasicAuthString());
             }
+
+            DefaultHttpClient client = new DefaultHttpClient(my_httpParams);
+            SingleClientConnManager mgr = new SingleClientConnManager(client.getParams(), registry);
 
             DefaultHttpClient httpClient = new DefaultHttpClient(mgr, client.getParams());
             HttpsURLConnection.setDefaultHostnameVerifier(hostnameVerifier);
@@ -280,11 +245,11 @@ public class RequestDownloaderImpl implements Runnable {
                 mStatuscode = response.getStatusLine().getStatusCode();
                 if (cancel)
                     return false;
-                BsmoLogUtil.d(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG,String.format("HTTP STATUS  %d", mStatuscode));
+//                Helper.vmappLog(InternalConstant.BUSHIMO_SDK_DEBUG_TAG,String.format("HTTP STATUS  %d", mStatuscode));
                 //リクエスト成功 200 OK and 201 CREATED
                 if ( mStatuscode == HttpStatus.SC_OK  || mStatuscode == HttpStatus.SC_CREATED ||
                         mStatuscode == HttpStatus.SC_PARTIAL_CONTENT){
-                    BsmoLogUtil.d(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG, "download OK");
+//                    Helper.vmappLog(InternalConstant.BUSHIMO_SDK_DEBUG_TAG, "download OK");
 
                     //コンテンツサイズも保存
                     Header header = response.getFirstHeader("Content-Length");
@@ -300,58 +265,7 @@ public class RequestDownloaderImpl implements Runnable {
                     Header headerE = response.getFirstHeader("Content-Encoding");
                     boolean gzip = headerE!=null && "gzip".equals(headerE.getValue());
 
-                    //ファイルに保存？
-                    if (saveFile!=null){
-
-                        bis = createInputStream(result,gzip);
-                        byte []buf=new byte[1024];
-                        int len=0,total=0;
-                        FileOutputStream fos = new FileOutputStream(saveFile,continueDownload);
-                        OutputStream os=new BufferedOutputStream(fos);
-
-                        do{
-                            len = bis.read(buf);
-                            if (cancel)
-                                return false;
-                            if (len>0){
-                                total+=len;
-                                downloadedLength=total;
-                                os.write(buf, 0, len);
-                                os.flush();
-
-//								BsmoLogUtil.d("download",String.format("download %d", total));
-
-                                //進捗報告？
-                                if (downloadingNotifyKey!=null){
-
-                                }
-                            }
-
-                            if (cancel)
-                                return false;
-
-                            if (debugWait>0){
-                                synchronized (this) {
-                                    try {
-                                        this.wait(debugWait);
-                                    } catch (InterruptedException e) {
-                                        e.printStackTrace();
-                                    }
-                                }
-                                if (cancel)
-                                    return false;
-                            }
-
-                        }while(len>0);
-
-                        os.close();
-
-                        if (cancel)
-                            return false;
-                        //一括ならコールバックする
-                        responseCallbackFile(saveFile,mContents);
-                    }
-                    else if (encode!=null){	//メモリ上でテキストとして処理
+                    if (encode!=null){	//メモリ上でテキストとして処理
 
                         bis = createInputStream(result,gzip);
                         Reader reader = new InputStreamReader(bis, encode);
@@ -367,53 +281,19 @@ public class RequestDownloaderImpl implements Runnable {
                                 //バッファへ追加
                                 sb.append(buf, 0, len);
                             }
-                            BsmoLogUtil.d(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG, String.format("size..%d", sb.length()));
+//                            Helper.vmappLog(InternalConstant.BUSHIMO_SDK_DEBUG_TAG, String.format("size..%d", sb.length()));
                             if (cancel)
                                 return false;
                         }while(len>0);
 
                         retStr=sb.toString();
-                        BsmoLogUtil.d(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG,retStr);
+//                        Helper.vmappLog(InternalConstant.BUSHIMO_SDK_DEBUG_TAG, retStr);
 
                         if (cancel)
                             return false;
                         //コールバックする
-                        responseCallbackString(retStr,mContents);
+                        responseCallbackString(retStr);
                     }
-                    else{
-                        bis = createInputStream(result,gzip);
-
-                        byte []buf=new byte[1024];
-                        int len=0,total=0;
-                        ByteArrayOutputStream os=new ByteArrayOutputStream();
-                        do{
-                            len = bis.read(buf);
-                            if (cancel)
-                                return false;
-                            if (len>0){
-                                total+=len;
-                                downloadedLength=total;
-                                os.write(buf, 0, len);
-
-                                //進捗報告？
-                                if (downloadingNotifyKey!=null){
-
-                                }
-                            }
-//							BsmoLogUtil.d("download file ", String.format("size..%d", total));
-                            if (cancel)
-                                return false;
-                        }while(len>0);
-
-                        byte[]receive = os.toByteArray();
-                        os.close();
-
-                        if (cancel)
-                            return false;
-                        //コールバックする
-                        responseCallbackBytes(receive,mContents);
-                    }
-
                 }
                 else{	//error
                     errorEvent(mStatuscode,null);
@@ -474,7 +354,7 @@ public class RequestDownloaderImpl implements Runnable {
                 }
             }
 
-            BsmoLogUtil.d(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG, " download thread end. "+String.format("sts=%d length=%d", mStatuscode,retStr.length()));
+//            Helper.vmappLog(InternalConstant.BUSHIMO_SDK_DEBUG_TAG, " download thread end. " + String.format("sts=%d length=%d", mStatuscode, retStr.length()));
             return true;
         }
         finally{
@@ -504,201 +384,34 @@ public class RequestDownloaderImpl implements Runnable {
 
     /**
      * レスポンスをコールバックする
-     * @param res
-     * @param contentsId
+     * @param retStr レスポンス
      */
-    private void responseCallbackBytes(byte[] res, Object contentsId) {
+    private void responseCallbackString(String retStr) {
 
-        //TODO:整理予定
+//        Helper.vmappLog(InternalConstant.BUSHIMO_SDK_DEBUG_TAG, "downloader response dump " + retStr);
 
-//TODO:とりあえず使わないので、作らない
-//		//リスナーがあったらそっち
-//		if (callbackListener!=null){
-//			//後ほど調整
-//			callbackListener.onResponse("200", res);
-//		}
-//		else
-        if (callbackAction!=null){
-            try {
-                callbackAction.invoke(callbackTarget, new Object[]{res,contentsId});
-            } catch (IllegalArgumentException e) {
-                e.printStackTrace();
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            }
+        //キャンセル済みの場合は無視する
+        if (cancel){
+            return;
         }
-    }
 
-    /**
-     * レスポンスをコールバックする
-     * @param res
-     * @param contentsId
-     */
-    private void responseCallbackString(String retStr, Object contentsId) {
-
-        BsmoLogUtil.d(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG,"downloader response dump "+retStr);
-
-        //リスナーがあったらそっち
-        if (callbackAction==null){
-            //形式に応じてコールバックする
-//			callbackListener.onResponse(mStatuscode, retStr);
-            @SuppressWarnings("rawtypes")
-            onRequestResultListener listener=null;
-            try {
-                if (callbackListenerItem!=null){
-                    listener=callbackListenerItem;
-                    HashMap<String, String> res = BsmoResponseParser.parseBodyItem(retStr,responsekey);
-                    callbackListenerItem.onResponse(mStatuscode, res);
-                }
-                else if (callbackListenerList!=null){
-                    listener=callbackListenerList;
-                    BsmoResponseListObject res = BsmoResponseParser.parseBodyList(retStr,responsekey);
-                    callbackListenerList.onResponse(mStatuscode, res);
-                }
-                else if (callbackListenerBoolean!=null){
-                    listener=callbackListenerBoolean;
-                    Boolean res = BsmoResponseParser.parseBodyBoolean(retStr,responsekey);
-                    callbackListenerBoolean.onResponse(mStatuscode, res);
-                }
-                else if (callbackListenerJson!=null){
-                    listener=callbackListenerJson;
-                    JSONObject res = BsmoResponseParser.parseBodyJson(retStr);
-                    callbackListenerJson.onResponse(mStatuscode, res);
-                }
-                else if (callbackListenerMapAndEntrylist!=null){
-                    listener=callbackListenerMapAndEntrylist;
-                    BsmoResponseMapAndEntrylistObject res = BsmoResponseParser.parseBodyMapAndEntrylist(retStr,responsekey);
-                    callbackListenerMapAndEntrylist.onResponse(mStatuscode, res);
-                }
-//				else if (callbackListenerFile!=null){
-//					HashMap<String, String> res = BsmoResponseParser.parseBodyItem(retStr);
-//					callbackListenerItem.onResponse(mStatuscode, res);
-//				}
-            } catch (BsmoException e) {
-                e.printStackTrace();
-
-                //例外発生時はエラーレスポンス扱い
-                listener.onError(e.code1, mStatuscode);
-            }
-        }
-        else if (callbackAction!=null){
-            try {
-                callbackAction.invoke(callbackTarget, new Object[]{retStr,contentsId});
-            } catch (IllegalArgumentException e) {
-                e.printStackTrace();
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    /**
-     * レスポンスをコールバックする
-     * @param res
-     * @param contentsId
-     */
-    private void responseCallbackFile(String aSaveFile, Object contentsId) {
-
-        //リスナーがあったらそっち
-        if (callbackListenerFile!=null){
-            callbackListenerFile.onResponse(mStatuscode, aSaveFile);
-        }
-        else
-        if (callbackAction!=null){
-            try {
-                callbackAction.invoke(callbackTarget, new Object[]{aSaveFile,contentsId});
-            } catch (IllegalArgumentException e) {
-                e.printStackTrace();
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            }
-        }
+        callbackListener.onResponse(mStatuscode, retStr);
     }
 
     /**
      * 通信等のエラー発生
-     * @param i
-     * @param e
+     * @param statusCode ステータスコード
+     * @param e Exception
      */
     protected void errorEvent(int statusCode, Exception e) {
 
+        Helper.vmappLog("RequestDownloaderImpl.errorEvent", "statusCode = " + statusCode + " e = " + e);
         //キャンセル済みの場合はエラーを無視する
-        if (cancel)
+        if (cancel){
             return;
-
-        //エラー情報
-        String error = (statusCode!=0)?String.format("レスポンスコードエラー %d",statusCode)
-//										:"その他のエラー";//:e.getLocalizedMessage();
-                //TODO 本番はその他のエラーにする。
-                :e.getLocalizedMessage();
-
-        //リスナーがあったらそっち
-        if (callbackListenerBoolean!=null){
-            //TODO 後ほど調整
-            callbackListenerBoolean.onError(-1,mStatuscode);
-        }
-        else if (callbackListenerItem!=null){
-            //TODO 後ほど調整
-            callbackListenerItem.onError(-1,mStatuscode);
-        }
-        else if (callbackListenerList!=null){
-            //TODO 後ほど調整
-            callbackListenerList.onError(-1,mStatuscode);
-        }
-        else if (callbackListenerFile!=null){
-            //TODO 後ほど調整
-            callbackListenerFile.onError(-1,mStatuscode);
-        }
-        else if (callbackListenerJson!=null){
-            //TODO 後ほど調整
-            callbackListenerJson.onError(-1,mStatuscode);
-        }
-        else if (callbackListenerMapAndEntrylist!=null){
-            //TODO 後ほど調整
-            callbackListenerMapAndEntrylist.onError(-1,mStatuscode);
-        }
-        else if (callbackErrorAction!=null && callbackTarget!=null){
-            try {
-                if (mContents==null){
-                    BsmoLogUtil.d(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG,"mContents==null");
-                }
-                callbackErrorAction.invoke(callbackTarget, new Object[]{error,mContents});
-            } catch (IllegalArgumentException e1) {
-                e1.printStackTrace();
-            } catch (IllegalAccessException e1) {
-                e1.printStackTrace();
-            } catch (InvocationTargetException e1) {
-                e1.printStackTrace();
-            }
-        }
-        else{
-            //domain名が出たりするので、詳細は表示しない
-            //alertを出す
-            BsmoHelpers.alert(null,BsmoHelpers.getCurrentActivity().getString(Bushimo.getSharedInstance().getResourceId(R.string.bsmo_error_communication,"string","bsmo_error_communication"), error));
-//			MyHelpers.alert(null,String.format("通信エラーが発生しました。"));
         }
 
-        //通知もしておく
-        BsmoNotificationCenter.getSharedInstance().postNotification("downloadError",error);
-        if (isNotificationFlg) {
-            if (statusCode == 401) {
-                // 認証エラーのときは認証を始めるので、通知する
-                BsmoNotificationCenter.getSharedInstance().postNotification(
-                        BsmoInternalConstant.Events.EVENT_AUTH_ERROR, error);
-
-            } else if(statusCode==412 && Bushimo.getSharedInstance().isSDK()==false) {
-                // バージョンチェックエラーの通知
-                BsmoNotificationCenter.getSharedInstance().postNotification(
-                        BsmoInternalConstant.Events.EVENT_PF_VERSION_ERROR, error);
-
-            }
-        }
+        callbackListener.onResponse(statusCode, null);
     }
 
     /**
@@ -725,11 +438,7 @@ public class RequestDownloaderImpl implements Runnable {
      * ダウンロードをキャンセルする。
      */
     public void cancelDownload() {
-
         cancel=true;
-        callbackTarget=null;
-        callbackAction=null;
-
     }
 
     /**
@@ -739,5 +448,51 @@ public class RequestDownloaderImpl implements Runnable {
     public boolean isUsing(){
 
         return inThread;
+    }
+
+    /**
+     * 指定URLにPOSTする
+     * @param url
+     * @param params
+     */
+    public void postAndDownloadWithUrl(String url,String contents, HashMap<String,String> params) {
+
+        boolean isSetToken = false;
+
+        //引数をListに直す
+        mPostParams = new ArrayList<NameValuePair>();
+        if (params != null && params.size()>0){
+            for(Map.Entry<String, String> entry: params.entrySet()){
+                String key = entry.getKey();
+                String value = entry.getValue();
+
+                if(!isSetToken && key.equals("accessToken")){
+                    isSetToken = true;
+                }
+
+                mPostParams.add(new BasicNameValuePair(key,value));
+            }
+        }
+
+//        //アクセストークン追加
+//        if(url.startsWith("https://") && !isSetToken){
+//            String token = (Bushimo.getSharedInstance().getAccessToken()==null)?"":Bushimo.getSharedInstance().getAccessToken();
+//
+//            if (url.endsWith(BsmoInternalConstant.WAPI_URL_INSPECTION) && "".equals(token)) {
+//                //※BSM_DEV-2539 inspection APIで、非会員の時はkeyを付与しないよう変更
+//            } else {
+//                mPostParams.add(new BasicNameValuePair("accessToken",token));
+//            }
+//        }
+
+//        Helper.vmappLog(BsmoInternalConstant.BUSHIMO_SDK_DEBUG_TAG,"WAPI request. "+String.format("url=%s,params=%s",url,mPostParams.toString()));
+
+        mUrl = url;
+        mContents=contents;
+        cancel=false;
+        post=true;
+        //スレッド開始
+        Thread t = new Thread(this);
+        t.start();
     }
 }

@@ -23,13 +23,7 @@ import android.util.Log;
 import android.view.Display;
 import android.view.WindowManager;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.io.UnsupportedEncodingException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.net.URLEncoder;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -38,8 +32,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Locale;
 
 import javax.crypto.Cipher;
@@ -61,86 +53,6 @@ public class Helper {
     private static Activity mActivity;
     /** プログレスダイアログ */
     public static ProgressDialog progressDialog;
-
-    /**
-     * JSONArray形式のものをパース
-     * @param body JSONArray形式の文字列
-     * @return パースされたHashMap<String,String>のArray
-     */
-    public static ArrayList<HashMap<String, String>> parseBodyJsonArray(String body) {
-        ArrayList<HashMap<String, String>> res = new ArrayList<HashMap<String, String>>();
-
-        try {
-            JSONArray jsonArray = new JSONArray(body);
-
-            for (int i = 0; i < jsonArray.length(); i++) {
-                try {
-                    JSONObject jobj = jsonArray.getJSONObject(i);
-                    HashMap<String, String> s = Helper.json2Item(jobj);
-                    res.add(s);
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-            }
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        return res;
-    }
-
-    /**
-     * JSON BODYをパースして、HashMap<String,String>を返す。
-     * @param body 対象文字列
-     * @param key キー
-     * @return HashMap<String,String> パース後のHashMap
-     */
-    public static HashMap<String, String> parseBodyItem(String body, String key) {
-
-        if(body == null){
-            return null;
-        }
-
-        try {
-            JSONObject json = new JSONObject(body);
-
-            //キー指定のときはキーに限定する
-            if (key != null) {
-                json = json.getJSONObject(key);
-            }
-
-            //HashMapに変換
-            HashMap<String, String> item = json2Item(json);
-
-            return item;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    /**
-     * アイテムをJSONに変換する
-     * @param jitem アイテム
-     * @return JSON 返還後のJSONアイテム
-     * @throws JSONException
-     */
-    public static HashMap<String, String> json2Item(JSONObject jitem) throws JSONException {
-        HashMap<String, String> item = new HashMap<String, String>();
-        @SuppressWarnings("rawtypes")
-        Iterator it = jitem.keys();
-        while (it.hasNext()) {
-            String n = (String) it.next();
-
-            if(jitem.isNull(n)){
-                item.put(n, null);
-            }else{
-                item.put(n, jitem.getString(n));
-            }
-        }
-        return item;
-    }
 
     /**
      * バージョンを満たしているかチェック
@@ -316,7 +228,7 @@ public class Helper {
                 AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder( getCurrentActivity() );
                 alertDialogBuilder.setTitle(title);
                 alertDialogBuilder.setMessage(message);
-                alertDialogBuilder.setPositiveButton( "OK" ,listener);
+                alertDialogBuilder.setPositiveButton("OK", listener);
                 AlertDialog alertDialog = alertDialogBuilder.create();
                 alertDialog.show();
             }
@@ -348,80 +260,6 @@ public class Helper {
                 alertDialog.show();
             }
         });
-    }
-
-    /**
-     * confirmのリスナー
-     * @author mharada
-     *
-     */
-    private static class ConfirmListener implements OnClickListener{
-
-        public Object mParam;
-        public Object mTarget;
-        public Method mAction;
-        public Method mCancelAction;
-
-        @Override
-        public void onClick(DialogInterface dialoginterface, int id) {
-
-            //YES?
-            if (id==DialogInterface.BUTTON_POSITIVE){
-
-                Helper.invoke(mTarget, mAction, mParam);
-            }
-            else if (id==DialogInterface.BUTTON_NEGATIVE){
-
-                if (mCancelAction!=null)
-                    Helper.invoke(mTarget, mCancelAction, mParam);
-            }
-        }
-    }
-
-    /**
-     * invokeDelay用クラス
-     * @author mharada
-     *
-     */
-    private static class InvokeDelayRun implements Runnable{
-        Object target;
-        Method method;
-        public InvokeDelayRun(Object target,Method method){
-            this.target=target;
-            this.method=method;
-        }
-        @Override
-        public void run() {
-
-            //呼び出す
-            try {
-                method.invoke(target,new Object[]{});
-            } catch (IllegalArgumentException e) {
-                e.printStackTrace();
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    /**
-     * 指定メソッドを呼び出す。例外キャッチが面倒なので、ある。それだけ。
-     */
-    public static boolean invoke(Object target,Method method, Object param){
-
-        try {
-            method.invoke(target, new Object[]{param});
-            return true;
-        } catch (IllegalArgumentException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-        }
-        return false;
     }
 
     /**

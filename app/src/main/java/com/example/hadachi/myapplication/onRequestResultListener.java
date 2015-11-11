@@ -3,7 +3,7 @@ package com.example.hadachi.myapplication;
 /**
  * Created by h.adachi on 2015/11/10.
  */
-public interface OnRequestResultListener<T> {
+public interface OnRequestResultListener<T,S> {
 
     /**
      * リクエストの結果としてエラーが返ってきた。もしくはリクエストに失敗した。
